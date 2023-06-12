@@ -1,0 +1,110 @@
+import telebot
+from telebot import types
+import sqlite3
+
+#токен от BotFather
+bot = telebot.TeleBot("*")
+
+# Создаем подключение к базе данных SQLite
+conn = sqlite3.connect('jobs.db', check_same_thread=False)
+conn = sqlite3.connect('works.db', check_same_thread=False)
+cur = conn.cursor()
+
+# Создаем таблицу jobs в базе данных, если ее нет
+cur.execute('''CREATE TABLE IF NOT EXISTS jobs 
+               (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, phone TEXT, description TEXT, exp TEXT)''')
+cur.execute('''CREATE TABLE IF NOT EXISTS works 
+               (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, phone TEXT, description TEXT, exp TEXT)''')
+conn.commit()
+
+markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+item1= types.KeyboardButton("Новое резюме")
+item2 = types.KeyboardButton("Найти соискателя")
+item3 = types.KeyboardButton("Новая вакансия")
+item4 = types.KeyboardButton("Найти работу")
+
+# Обработчик команды /start
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    bot.reply_to(message, "Привет! Это бот для поиска работы или соискателя. Чтобы добавить новую вакансию или найти работу , нажмите подходящие кнопки.")
+    markup.add(item1,item2,item3,item4)
+    bot.send_message(message.chat.id, 'Выберите что вам надо', reply_markup=markup)
+
+# Обработчик команды /addjob
+@bot.message_handler(content_types=['text'])
+def add_job(message):
+    if message.text == "Новая вакансия":
+        bot.reply_to(message, "Введите ваше имя или название компании")
+        bot.register_next_step_handler(message, add_work_title)
+    if message.text == "Найти работу":
+        cur.execute("SELECT * FROM works")
+        rows = cur.fetchall()
+        if len(rows) > 0:
+            job_list = "Список доступных вакансий:\n"
+            for row in rows:
+                job_list += f"{row[0]}. {row[1]} - {row[2]} - {row[4]} - {row[3]}\n"  # row 1-имя, 2-описание, 3-стаж, 4-номер телефона
+            bot.reply_to(message, job_list)
+        else:
+            bot.reply_to(message, "Вакансий не найдено.")
+    if message.text == "Новое резюме":  #создание резюме
+        bot.reply_to(message, "Введите название профессии:")
+        bot.register_next_step_handler(message, add_job_title)
+    if message.text == "Найти соискателя":#поиск сотрудника
+        cur.execute("SELECT * FROM jobs")
+        rows = cur.fetchall()
+        if len(rows) > 0:
+            job_list = "Список работников:\n"
+            for row in rows:
+                job_list += f"{row[0]}. {row[1]} - {row[2]} - {row[4]} - {row[3]}\n"  # row 1-имя, 2-описание, 3-стаж, 4-номер телефона
+            bot.reply_to(message, job_list)
+        else:
+            bot.reply_to(message, "Работников не найдено.")
+
+def add_job_title(message):
+    # Сохраняем название вакансии
+    job_title = message.text
+    bot.reply_to(message, "Введите имя для обращения:")
+    bot.register_next_step_handler(message, add_job_phone, job_title)
+
+def add_job_phone(message, job_title):
+    # номер телефона
+    job_phone = message.text
+    bot.reply_to(message, "Введите номер телефона для резюме:")
+    bot.register_next_step_handler(message, add_job_exp, job_title, job_phone)#add_job_description
+
+def add_job_exp(message,job_title,job_phone):
+    job_exp = message.text
+    bot.reply_to(message, "Ваш стаж работы?")
+    bot.register_next_step_handler(message,add_job_description,job_exp,job_title,job_phone)
+
+def add_job_description(message, job_title,job_phone,job_exp):
+    # Сохраняем описание вакансии и добавляем ее в базу данных
+    job_description = message.text
+    cur.execute("INSERT INTO jobs (title, phone ,description, exp) VALUES (?,?,?,?);", (job_title, job_phone, job_description, job_exp))
+    conn.commit()
+    bot.reply_to(message, "Резюме успешно добавлено!")
+#Создание вакансии
+def add_work_title(message):
+    work_title = message.text
+    bot.reply_to(message, "Введите название вакансии")
+    bot.register_next_step_handler(message, add_work_phone, work_title)
+def add_work_phone(message, work_title):
+    work_phone = message.text
+    bot.reply_to(message, "Введите номер телефона или почту для обращения")
+    bot.register_next_step_handler(message,add_work_exp ,work_phone, work_title)
+
+def add_work_exp(message, work_title,work_phone):
+    work_exp = message.text
+    bot.reply_to(message, "Введите необходимый опыт работы")
+    bot.register_next_step_handler(message, add_work_description, work_exp, work_phone, work_title)
+
+def add_work_description(message, work_title, work_phone, work_exp):
+    # Сохраняем описание вакансии и добавляем ее в базу данных
+    work_description = message.text
+    cur.execute("INSERT INTO works (title, phone ,description, exp) VALUES (?,?,?,?);",(work_title, work_phone, work_description, work_exp))
+    conn.commit()
+    bot.reply_to(message, "Вакансия успешно добавлена!")
+
+
+# Запуск
+bot.polling()
